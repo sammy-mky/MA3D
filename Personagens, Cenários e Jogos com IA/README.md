@@ -4,6 +4,8 @@
 
 Bones: O Guardião do Cemitério é um jogo de plataforma 2D em HTML5 Canvas, em arquivo único, no qual o esqueleto Bones percorre um cemitério noturno coletando 15 ossos sagrados para restaurar a paz do local. A cada 5 ossos coletados, Bones evolui (fica maior e mais forte), enquanto 3 fantasmas patrulham as plataformas como inimigos. O jogador tem 3 vidas, perde uma ao encostar em um fantasma e vence ao coletar todos os 15 ossos.
 
+https://ai.studio/apps/5c126ea6-7a04-41b6-936b-c652a27fdd72
+---
 ## 🚀 Como Executar
 
 1. Baixe o arquivo `index.html`.
@@ -40,7 +42,7 @@ Todos os assets devem ser **PNG com fundo transparente** (exceto `bg_sky.png`, q
 ## 🖼️ Prints dos Assets
 
 ### Model sheet do Bones
-![Model sheet do Bones](prints/model_sheet_bones.png)
+![Model sheet do Bones](prints/model_sheet_bones.jpg)
 
 ### Camadas do cenário
 ![Céu noturno](prints/bg_sky.png)
