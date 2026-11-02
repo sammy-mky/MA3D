@@ -1,0 +1,6 @@
+{
+  "name": "Bones: O Guardião do Cemitério",
+  "description": "Jogo de plataforma 2D em HTML5 Canvas no cemitério com o guardião Bones, coletando ossos e enfrentando fantasmas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

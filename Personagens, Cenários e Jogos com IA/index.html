@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Bones: O Guardião do Cemitério</title>
+    <meta name="description" content="Jogo de plataforma 2D em HTML5 Canvas no cemitério com o guardião esqueleto Bones, coletando ossos e enfrentando fantasmas." />
+    <meta property="og:title" content="Bones: O Guardião do Cemitério" />
+    <meta property="og:description" content="Jogo de plataforma 2D em HTML5 Canvas no cemitério com o guardião esqueleto Bones, coletando ossos e enfrentando fantasmas." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      /* Reset e container de jogo */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body {
+        background-color: #0d0718;
+        color: #f5f5f7;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+        touch-action: manipulation;
+      }
+
+      #game-wrapper {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 960px;
+        padding: 8px;
+      }
+
+      #canvas-container {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        max-height: 85vh;
+        border: 3px solid #281440;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(34, 197, 94, 0.2);
+        background-color: #0b0514;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      /* Controles mobile na tela */
+      #mobile-controls {
+        display: none;
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 10px;
+        padding: 0 16px;
+      }
+
+      @media (pointer: coarse), (max-width: 800px) {
+        #mobile-controls {
+          display: flex;
+        }
+      }
+
+      .touch-group {
+        display: flex;
+        gap: 12px;
+      }
+
+      .touch-btn {
+        background: #1a0f2e;
+        border: 2px solid #22c55e;
+        color: #f5f5f7;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+      }
+
+      .touch-btn:active {
+        background: #22c55e;
+        color: #1a0f2e;
+        transform: scale(0.95);
+      }
+
+      .jump-btn {
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        font-size: 16px;
+        letter-spacing: 1px;
+      }
+
+      #game-footer {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #8c7fa3;
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        padding: 0 4px;
+      }
+
+      #game-footer span {
+        color: #22c55e;
+      }
+
+      .btn-audio {
+        background: #1a0f2e;
+        border: 1px solid #4a2d75;
+        color: #f5f5f7;
+        padding: 3px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .btn-audio:hover {
+        border-color: #22c55e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-wrapper">
+      <div id="canvas-container">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+      </div>
+
+      <!-- Barra informativa inferior com atalhos e áudio -->
+      <div id="game-footer">
+        <div>Controles: <span>← →</span> Mover | <span>ESPAÇO</span> Pular | <span>R</span> Reiniciar</div>
+        <button id="audio-toggle" class="btn-audio" type="button">Som: Ativado 🔊</button>
+      </div>
+
+      <!-- Controles touch opcionais para dispositivos móveis -->
+      <div id="mobile-controls">
+        <div class="touch-group">
+          <button id="btn-left" class="touch-btn" aria-label="Mover para esquerda">◀</button>
+          <button id="btn-right" class="touch-btn" aria-label="Mover para direita">▶</button>
+        </div>
+        <div class="touch-group">
+          <button id="btn-jump" class="touch-btn jump-btn" aria-label="Pular">PULO</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      /**
+       * Bones: O Guardião do Cemitério
+       * Jogo de plataforma 2D em HTML5 Canvas em arquivo único.
+       * 
+       * Estrutura do código:
+       * 1. ESTADO
+       * 2. ENTRADA
+       * 3. REGRAS
+       * 4. RENDER
+       */
+
+      /* ==================== 1. ESTADO ==================== */
+
+      // --- CONSTANTES DE FÍSICA E AJUSTES DE GAMEPLAY (Fáceis de calibrar) ---
+      const GRAVITY = 0.58;              // Força gravitacional aplicada a cada frame
+      const MOVE_SPEED = 3.74;           // Velocidade horizontal de caminhada do personagem (reduzida em 15%)
+      const JUMP_FORCE = -12.4;          // Impulso inicial do salto (negativo pois o eixo Y cresce para baixo)
+      const ENEMY_SPEED = 0.85;          // Velocidade de patrulha dos fantasmas (reduzida pela metade)
+      // Modificadores de velocidade de movimento por evolução: 1ª (-20%), 2ª (-5%), 3ª (-5%)
+      const EVOLUTION_MOVE_MODIFIERS = [1.0, 0.80, 0.75, 0.70];
+      // Modificadores de força do pulo: sem debuff, 2ª (+10%) e 3ª (+20%) com base no valor inicial
+      const EVOLUTION_JUMP_MODIFIERS = [1.0, 1.00, 1.10, 1.20];
+      const WORLD_WIDTH = 3400;          // Extensão horizontal total da fase
+      const WORLD_HEIGHT = 540;          // Altura fixa do mundo de jogo
+      const CANVAS_WIDTH = 960;          // Largura da visão do canvas
+      const CANVAS_HEIGHT = 540;         // Altura da visão do canvas
+      const MAX_LIVES = 3;               // Total de vidas do jogador
+      const TOTAL_BONES = 15;            // Quantidade total de ossos espalhados para vencer
+
+      // --- NOMES EXATOS DOS ASSETS SOLICITADOS ---
+      const ASSET_NAMES = {
+        bones_idle: 'bones_idle.png',
+        bones_walk: 'bones_walk.png',    // 4 quadros lado a lado
+        bones_jump: 'bones_jump.png',
+        enemy: 'enemy.png',
+        bone: 'bone.png',
+        bg_sky: 'bg_sky.png',
+        bg_trees: 'bg_trees.png',
+        bg_graves: 'bg_graves.png',
+        tile_ground: 'tile_ground.png'
+      };
+
+      // Carregamento de imagens com suporte a falha e caminho relativo/absoluto
+      const assets = {};
+      for (const [key, filename] of Object.entries(ASSET_NAMES)) {
+        const img = new Image();
+        img.loaded = false;
+        img.onload = () => { img.loaded = true; };
+        img.onerror = () => {
+          // Se falhar no caminho relativo /assets, tenta sem a barra ou vice-versa
+          if (!img.retried) {
+            img.retried = true;
+            img.src = img.src.startsWith('/') ? 'assets/' + filename : '/assets/' + filename;
+            return;
+          }
+          // Caso não exista, o jogo desenhará um retângulo colorido no lugar (conforme especificado)
+          img.loaded = false;
+        };
+        img.src = 'assets/' + filename;
+        assets[key] = img;
+      }
+
+      // --- SISTEMA DE EFEITOS SONOROS RETRÔ (Web Audio API nativa) ---
+      let audioEnabled = true;
+      let audioCtx = null;
+
+      function initAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) audioCtx = new AudioContextClass();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }
+
+      function playSound(type) {
+        if (!audioEnabled) return;
+        try {
+          initAudio();
+          if (!audioCtx) return;
+          const now = audioCtx.currentTime;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          if (type === 'jump') {
+            // Som de salto: sweep ascendente rápido
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(380, now + 0.16);
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.16);
+            osc.start(now);
+            osc.stop(now + 0.16);
+          } else if (type === 'bone') {
+            // Som de osso coletado: duplo sino brilhante
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587, now); // D5
+            osc.frequency.setValueAtTime(880, now + 0.08); // A5
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+          } else if (type === 'evolve') {
+            // Fanfarra triunfante de evolução
+            const freqs = [440, 554, 659, 880];
+            freqs.forEach((freq, i) => {
+              const o = audioCtx.createOscillator();
+              const g = audioCtx.createGain();
+              o.connect(g);
+              g.connect(audioCtx.destination);
+              o.type = 'square';
+              o.frequency.setValueAtTime(freq, now + i * 0.07);
+              g.gain.setValueAtTime(0.12, now + i * 0.07);
+              g.gain.exponentialRampToValueAtTime(0.01, now + (i + 1) * 0.12);
+              o.start(now + i * 0.07);
+              o.stop(now + (i + 1) * 0.12);
+            });
+          } else if (type === 'hit') {
+            // Som de dano ao tocar em fantasma
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.exponentialRampToValueAtTime(55, now + 0.28);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.28);
+            osc.start(now);
+            osc.stop(now + 0.28);
+          } else if (type === 'gameover') {
+            // Descendente fúnebre
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.6);
+            osc.start(now);
+            osc.stop(now + 0.6);
+          } else if (type === 'victory') {
+            // Melodia de vitória do guardião
+            const notes = [523, 659, 783, 1046];
+            notes.forEach((freq, idx) => {
+              const o = audioCtx.createOscillator();
+              const g = audioCtx.createGain();
+              o.connect(g);
+              g.connect(audioCtx.destination);
+              o.type = 'triangle';
+              o.frequency.setValueAtTime(freq, now + idx * 0.1);
+              g.gain.setValueAtTime(0.2, now + idx * 0.1);
+              g.gain.exponentialRampToValueAtTime(0.01, now + (idx + 1) * 0.25);
+              o.start(now + idx * 0.1);
+              o.stop(now + (idx + 1) * 0.25);
+            });
+          }
+        } catch (e) {
+          // Ignora caso áudio não seja permitido antes do primeiro toque
+        }
+      }
+
+      // --- CONFIGURAÇÃO DE PLATAFORMAS DO CENÁRIO ---
+      // O chão é montado repetindo tile_ground.png na base e plataformas
+      const platforms = [
+        // Chão contínuo com pequenos desníveis de cemitério
+        { x: 0, y: 460, width: 3400, height: 80, isGround: true },
+
+        // Plataformas elevadas (túmulos, mausoléus, parapeitos de pedra gótica)
+        { x: 220, y: 380, width: 140, height: 26 },
+        { x: 420, y: 320, width: 180, height: 26 },
+        { x: 600, y: 230, width: 160, height: 26 },
+
+        // Plataforma do Inimigo 1 (patrulha do primeiro setor)
+        { x: 780, y: 360, width: 380, height: 26 },
+        { x: 980, y: 250, width: 150, height: 26 },
+
+        // Cripta central e mausoléu alto
+        { x: 1220, y: 370, width: 200, height: 26 },
+        { x: 1260, y: 210, width: 180, height: 26 },
+        { x: 1480, y: 310, width: 160, height: 26 },
+
+        // Plataforma do Inimigo 2 (patrulha do setor central)
+        { x: 1680, y: 370, width: 420, height: 26 },
+        { x: 1780, y: 230, width: 170, height: 26 },
+        { x: 2000, y: 170, width: 160, height: 26 },
+
+        // Seção final: criptas ancestrais
+        { x: 2240, y: 350, width: 180, height: 26 },
+        { x: 2460, y: 260, width: 190, height: 26 },
+
+        // Plataforma do Inimigo 3 (patrulha do último santuário)
+        { x: 2680, y: 360, width: 440, height: 26 },
+        { x: 2820, y: 200, width: 160, height: 26 },
+        { x: 3080, y: 260, width: 220, height: 26 }
+      ];
+
+      // Posição inicial segura de renascimento
+      const PLAYER_START_X = 60;
+      const PLAYER_START_Y = 390;
+
+      // --- ESTADO MUTÁVEL DO JOGO ---
+      const state = {
+        gameState: 'START',        // 'START' | 'PLAYING' | 'GAMEOVER' | 'VICTORY'
+        lives: MAX_LIVES,          // 3 vidas
+        bonesCollected: 0,         // Contagem de 0 a 15
+        evolutionLevel: 0,         // Evolução calculada: Math.min(3, Math.floor(bonesCollected / 5))
+
+        // Câmera horizontal suave
+        camera: { x: 0, y: 0 },
+
+        // Dados do jogador Bones
+        player: {
+          x: PLAYER_START_X,
+          y: PLAYER_START_Y,
+          vx: 0,
+          vy: 0,
+          baseWidth: 32,
+          baseHeight: 48,
+          width: 32,
+          height: 48,
+          scale: 1.0,
+          facing: 'right',         // 'left' ou 'right'
+          isGrounded: false,
+          isJumping: false,
+          animFrame: 0,
+          animTimer: 0,
+          invulnerableTimer: 0     // Tempo de invencibilidade temporária após sofrer dano
+        },
+
+        // Exatamente 15 ossos distribuídos pela fase
+        bones: [
+          { id: 1,  x: 280,  y: 330, width: 26, height: 26, collected: false, bobOffset: 0.2 },
+          { id: 2,  x: 500,  y: 270, width: 26, height: 26, collected: false, bobOffset: 0.7 },
+          { id: 3,  x: 680,  y: 180, width: 26, height: 26, collected: false, bobOffset: 1.2 },
+          { id: 4,  x: 880,  y: 310, width: 26, height: 26, collected: false, bobOffset: 0.4 },
+          { id: 5,  x: 1040, y: 200, width: 26, height: 26, collected: false, bobOffset: 1.8 }, // 1ª Evolução (5/15)
+          { id: 6,  x: 1330, y: 160, width: 26, height: 26, collected: false, bobOffset: 0.9 },
+          { id: 7,  x: 1540, y: 260, width: 26, height: 26, collected: false, bobOffset: 1.5 },
+          { id: 8,  x: 1350, y: 410, width: 26, height: 26, collected: false, bobOffset: 0.3 },
+          { id: 9,  x: 1850, y: 180, width: 26, height: 26, collected: false, bobOffset: 2.1 },
+          { id: 10, x: 2070, y: 120, width: 26, height: 26, collected: false, bobOffset: 0.8 }, // 2ª Evolução (10/15)
+          { id: 11, x: 1950, y: 320, width: 26, height: 26, collected: false, bobOffset: 1.4 },
+          { id: 12, x: 2320, y: 300, width: 26, height: 26, collected: false, bobOffset: 0.5 },
+          { id: 13, x: 2540, y: 210, width: 26, height: 26, collected: false, bobOffset: 1.9 },
+          { id: 14, x: 2900, y: 150, width: 26, height: 26, collected: false, bobOffset: 0.6 },
+          { id: 15, x: 3180, y: 210, width: 26, height: 26, collected: false, bobOffset: 1.1 }  // 3ª Evolução / Vitória (15/15)
+        ],
+
+        // Exatamente 3 inimigos (fantasmas) patrulhando plataformas
+        enemies: [
+          {
+            id: 1,
+            x: 820,
+            y: 318,
+            width: 36,
+            height: 40,
+            minX: 790,
+            maxX: 1140,
+            vx: ENEMY_SPEED,
+            facing: 'right',
+            floatPhase: 0,
+            pauseTimer: 0
+          },
+          {
+            id: 2,
+            x: 1720,
+            y: 328,
+            width: 36,
+            height: 40,
+            minX: 1690,
+            maxX: 2080,
+            vx: -ENEMY_SPEED,
+            facing: 'left',
+            floatPhase: 1.5,
+            pauseTimer: 0
+          },
+          {
+            id: 3,
+            x: 2720,
+            y: 318,
+            width: 36,
+            height: 40,
+            minX: 2690,
+            maxX: 3100,
+            vx: ENEMY_SPEED,
+            facing: 'right',
+            floatPhase: 2.7,
+            pauseTimer: 0
+          }
+        ],
+
+        // Efeitos de partículas visuais ao coletar ossos ou evoluir
+        particles: [],
+
+        // Mensagem de destaque na tela (ex: "EVOLUÇÃO 1/3 DESBLOQUEADA!")
+        bannerMessage: '',
+        bannerTimer: 0
+      };
+
+
+      /* ==================== 2. ENTRADA ==================== */
+
+      // Mapa de teclas pressionadas no teclado
+      const keys = {
+        left: false,
+        right: false,
+        jump: false,
+        jumpLocked: false // Evita pulo contínuo segurando o botão
+      };
+
+      // Mapeamento de teclado
+      window.addEventListener('keydown', (e) => {
+        initAudio();
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          keys.left = true;
+          e.preventDefault();
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          keys.right = true;
+          e.preventDefault();
+        } else if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+          if (!keys.jumpLocked) {
+            keys.jump = true;
+          }
+          e.preventDefault();
+        } else if (e.code === 'KeyR') {
+          // Tecla R reinicia o jogo e volta para a tela de Menu
+          reiniciarJogo(true);
+          e.preventDefault();
+        } else if (e.code === 'Enter') {
+          if (state.gameState === 'START') {
+            state.gameState = 'PLAYING';
+            playSound('jump');
+          } else if (state.gameState === 'GAMEOVER' || state.gameState === 'VICTORY') {
+            reiniciarJogo();
+          }
+          e.preventDefault();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          keys.left = false;
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          keys.right = false;
+        } else if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+          keys.jump = false;
+          keys.jumpLocked = false;
+        }
+      });
+
+      // Suporte a cliques/toques no Canvas para reiniciar nas telas de vitória ou derrota
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      canvas.addEventListener('click', (e) => {
+        initAudio();
+        if (state.gameState === 'START') {
+          state.gameState = 'PLAYING';
+          playSound('jump');
+        } else if (state.gameState === 'GAMEOVER' || state.gameState === 'VICTORY') {
+          reiniciarJogo();
+        }
+      });
+
+      // Controles de toque móveis
+      const btnLeft = document.getElementById('btn-left');
+      const btnRight = document.getElementById('btn-right');
+      const btnJump = document.getElementById('btn-jump');
+      const audioToggle = document.getElementById('audio-toggle');
+
+      if (btnLeft && btnRight && btnJump) {
+        const bindTouch = (btn, onDown, onUp) => {
+          btn.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); onDown(); });
+          btn.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); });
+          btn.addEventListener('mousedown', (e) => { e.preventDefault(); initAudio(); onDown(); });
+          btn.addEventListener('mouseup', (e) => { e.preventDefault(); onUp(); });
+          btn.addEventListener('mouseleave', () => { onUp(); });
+        };
+
+        bindTouch(btnLeft, () => { keys.left = true; }, () => { keys.left = false; });
+        bindTouch(btnRight, () => { keys.right = true; }, () => { keys.right = false; });
+        bindTouch(btnJump, () => {
+          if (state.gameState === 'START') {
+            state.gameState = 'PLAYING';
+            playSound('jump');
+          } else if (!keys.jumpLocked) {
+            keys.jump = true;
+          }
+        }, () => {
+          keys.jump = false;
+          keys.jumpLocked = false;
+        });
+      }
+
+      if (audioToggle) {
+        audioToggle.addEventListener('click', () => {
+          audioEnabled = !audioEnabled;
+          audioToggle.textContent = audioEnabled ? 'Som: Ativado 🔊' : 'Som: Mudo 🔇';
+          if (audioEnabled) initAudio();
+        });
+      }
+
+
+      /* ==================== 3. REGRAS ==================== */
+
+      /**
+       * Reinicia todas as variáveis de jogo para uma nova partida completa
+       */
+      function reiniciarJogo(paraMenu = false) {
+        state.gameState = paraMenu ? 'START' : 'PLAYING';
+        state.lives = MAX_LIVES;
+        state.bonesCollected = 0;
+        state.evolutionLevel = 0;
+        state.camera.x = 0;
+        state.bannerMessage = '';
+        state.bannerTimer = 0;
+        state.particles = [];
+
+        // Restaura jogador
+        state.player.x = PLAYER_START_X;
+        state.player.y = PLAYER_START_Y;
+        state.player.vx = 0;
+        state.player.vy = 0;
+        state.player.scale = 1.0;
+        state.player.width = state.player.baseWidth;
+        state.player.height = state.player.baseHeight;
+        state.player.facing = 'right';
+        state.player.isGrounded = false;
+        state.player.isJumping = false;
+        state.player.invulnerableTimer = 0;
+
+        // Restaura todos os 15 ossos
+        for (const bone of state.bones) {
+          bone.collected = false;
+        }
+
+        // Restaura posições dos 3 fantasmas
+        state.enemies[0].x = 820;
+        state.enemies[0].vx = ENEMY_SPEED;
+        state.enemies[0].pauseTimer = 0;
+        state.enemies[1].x = 1720;
+        state.enemies[1].vx = -ENEMY_SPEED;
+        state.enemies[1].pauseTimer = 0;
+        state.enemies[2].x = 2720;
+        state.enemies[2].vx = ENEMY_SPEED;
+        state.enemies[2].pauseTimer = 0;
+      }
+
+      /**
+       * Spawna partículas de luz verde cintilante
+       */
+      function spawnParticles(x, y, count = 12, color = '#22c55e') {
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1.5 + Math.random() * 3.5;
+          state.particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 1.5,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.03,
+            size: 3 + Math.random() * 3,
+            color
+          });
+        }
+      }
+
+      /**
+       * Atualização central de lógica e física a cada frame
+       */
+      function atualizarRegras() {
+        if (state.gameState !== 'PLAYING') {
+          if (state.gameState === 'START') {
+            return;
+          }
+          // Na tela de Game Over ou Vitória, apenas permite reiniciar com Espaço
+          if (keys.jump) {
+            keys.jump = false;
+            reiniciarJogo();
+          }
+          return;
+        }
+
+        const p = state.player;
+        const moveMod = EVOLUTION_MOVE_MODIFIERS[state.evolutionLevel] || 1.0;
+        const jumpMod = EVOLUTION_JUMP_MODIFIERS[state.evolutionLevel] || 1.0;
+        const currentMoveSpeed = MOVE_SPEED * moveMod;
+        const currentJumpForce = JUMP_FORCE * jumpMod;
+
+        // 1. Movimentação horizontal do jogador
+        if (keys.left && !keys.right) {
+          p.vx = -currentMoveSpeed;
+          p.facing = 'left';
+        } else if (keys.right && !keys.left) {
+          p.vx = currentMoveSpeed;
+          p.facing = 'right';
+        } else {
+          p.vx = 0;
+        }
+
+        // 2. Salto do jogador (Barra de Espaço)
+        // Nota: Segurar o pulo por 1.5s foi removido — muito trabalho para pouca coisa.
+        if (keys.jump && p.isGrounded) {
+          p.vy = currentJumpForce;
+          p.isGrounded = false;
+          p.isJumping = true;
+          keys.jump = false;
+          keys.jumpLocked = true;
+          playSound('jump');
+          spawnParticles(p.x + p.width / 2, p.y + p.height, 6, '#f5f5f7');
+        }
+
+        // 3. Aplicação da gravidade constante
+        p.vy += GRAVITY;
+
+        // Limite de velocidade de queda para evitar atravessar plataformas (terminal velocity)
+        if (p.vy > 14) p.vy = 14;
+
+        // Posições anteriores para checagem precisa de colisão com o topo das plataformas
+        const prevY = p.y;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Limites horizontais do mundo
+        if (p.x < 0) p.x = 0;
+        if (p.x + p.width > WORLD_WIDTH) p.x = WORLD_WIDTH - p.width;
+
+        // 4. Colisão com o topo das plataformas
+        p.isGrounded = false;
+        const playerBottom = p.y + p.height;
+        const prevBottom = prevY + p.height;
+
+        for (const plat of platforms) {
+          // Checa se o jogador está horizontalmente alinhado com a plataforma
+          const withinX = (p.x + p.width * 0.8 > plat.x) && (p.x + p.width * 0.2 < plat.x + plat.width);
+          
+          if (withinX) {
+            // O jogador só colide com o topo ao cair ou descer (prevBottom <= plat.y e novo bottom >= plat.y)
+            if (p.vy >= 0 && prevBottom <= plat.y + 12 && playerBottom >= plat.y) {
+              p.y = plat.y - p.height;
+              p.vy = 0;
+              p.isGrounded = true;
+              p.isJumping = false;
+              break;
+            }
+          }
+        }
+
+        // Se o jogador cair abaixo do cenário por algum motivo extremo, reposiciona no chão
+        if (p.y > WORLD_HEIGHT + 100) {
+          p.x = PLAYER_START_X;
+          p.y = PLAYER_START_Y;
+          p.vy = 0;
+          state.lives--;
+          playSound('hit');
+          if (state.lives <= 0) {
+            state.gameState = 'GAMEOVER';
+            playSound('gameover');
+          }
+        }
+
+        // Animação de caminhada (4 quadros no sprite bones_walk.png)
+        if (p.vx !== 0 && p.isGrounded) {
+          p.animTimer++;
+          if (p.animTimer % 7 === 0) {
+            p.animFrame = (p.animFrame + 1) % 4;
+          }
+        } else {
+          p.animFrame = 0;
+        }
+
+        // Temporizador de invulnerabilidade
+        if (p.invulnerableTimer > 0) {
+          p.invulnerableTimer--;
+        }
+
+        // 5. Patrulha dos 3 Inimigos (Fantasmas)
+        for (const enemy of state.enemies) {
+          enemy.floatPhase += 0.05;
+
+          // Se estiver pausando na borda da plataforma, decrementa o contador (0,5 segundo de pausa = 30 quadros a 60 FPS)
+          if (enemy.pauseTimer > 0) {
+            enemy.pauseTimer--;
+          } else {
+            enemy.x += enemy.vx;
+
+            // Inversão ao atingir os limites de patrulha com pausa de 0,5 segundo
+            if (enemy.vx > 0 && enemy.x >= enemy.maxX) {
+              enemy.x = enemy.maxX;
+              enemy.vx = -ENEMY_SPEED;
+              enemy.facing = 'left';
+              enemy.pauseTimer = 30; // 0,5 segundo de pausa a 60 FPS
+            } else if (enemy.vx < 0 && enemy.x <= enemy.minX) {
+              enemy.x = enemy.minX;
+              enemy.vx = ENEMY_SPEED;
+              enemy.facing = 'right';
+              enemy.pauseTimer = 30; // 0,5 segundo de pausa a 60 FPS
+            }
+          }
+
+          // 6. Colisão do Jogador com o Inimigo (Perde 1 de 3 vidas e volta ao início)
+          if (p.invulnerableTimer === 0) {
+            // Caixa de colisão ajustada (hitbox justa)
+            const ghostFloatY = enemy.y + Math.sin(enemy.floatPhase) * 6;
+            const enemyHitbox = {
+              x: enemy.x + 4,
+              y: ghostFloatY + 4,
+              width: enemy.width - 8,
+              height: enemy.height - 8
+            };
+
+            const playerHitbox = {
+              x: p.x + 4,
+              y: p.y + 4,
+              width: p.width - 8,
+              height: p.height - 8
+            };
+
+            const collide = (
+              playerHitbox.x < enemyHitbox.x + enemyHitbox.width &&
+              playerHitbox.x + playerHitbox.width > enemyHitbox.x &&
+              playerHitbox.y < enemyHitbox.y + enemyHitbox.height &&
+              playerHitbox.y + playerHitbox.height > enemyHitbox.y
+            );
+
+            if (collide) {
+              state.lives--;
+              spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 18, '#a855f7');
+              playSound('hit');
+
+              if (state.lives <= 0) {
+                state.gameState = 'GAMEOVER';
+                playSound('gameover');
+              } else {
+                // Volta ao ponto inicial com breve invulnerabilidade
+                p.x = PLAYER_START_X;
+                p.y = PLAYER_START_Y;
+                p.vx = 0;
+                p.vy = 0;
+                p.invulnerableTimer = 90; // ~1.5 segundos piscando
+              }
+            }
+          }
+        }
+
+        // 7. Coleta de Ossos e Evolução do Personagem
+        for (const bone of state.bones) {
+          if (!bone.collected) {
+            const boneBobY = bone.y + Math.sin(Date.now() * 0.005 + bone.bobOffset) * 4;
+            const collideBone = (
+              p.x < bone.x + bone.width &&
+              p.x + p.width > bone.x &&
+              p.y < boneBobY + bone.height &&
+              p.y + p.height > boneBobY
+            );
+
+            if (collideBone) {
+              bone.collected = true;
+              state.bonesCollected++;
+              playSound('bone');
+              spawnParticles(bone.x + bone.width / 2, boneBobY + bone.height / 2, 14, '#22c55e');
+
+              // A cada 5 ossos coletados, o personagem evolui: fica visualmente maior e HUD mostra "Evolução: X/3"
+              const newEvolution = Math.min(3, Math.floor(state.bonesCollected / 5));
+              
+              if (newEvolution > state.evolutionLevel) {
+                state.evolutionLevel = newEvolution;
+                
+                // Escala visual crescente:
+                // Nível 0: 1.0x (32x48)
+                // Nível 1 (5 ossos): 1.25x (40x60)
+                // Nível 2 (10 ossos): 1.5x (48x72)
+                // Nível 3 (15 ossos): 1.8x (58x86)
+                const scales = [1.0, 1.25, 1.5, 1.8];
+                const oldHeight = p.height;
+                p.scale = scales[state.evolutionLevel];
+                p.width = Math.round(p.baseWidth * p.scale);
+                p.height = Math.round(p.baseHeight * p.scale);
+                
+                // Ajusta o Y para que os pés continuem alinhados com a plataforma
+                p.y -= (p.height - oldHeight);
+
+                playSound('evolve');
+                spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 35, '#39ff14');
+                state.bannerMessage = `⚡ EVOLUÇÃO ${state.evolutionLevel}/3 DESBLOQUEADA! ⚡`;
+                state.bannerTimer = 160;
+              }
+
+              // Se coletar todos os 15 ossos: vence a fase!
+              if (state.bonesCollected >= TOTAL_BONES) {
+                state.gameState = 'VICTORY';
+                playSound('victory');
+                spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 50, '#f5f5f7');
+              }
+            }
+          }
+        }
+
+        // 8. Câmera segue o personagem horizontalmente
+        const targetCamX = p.x - CANVAS_WIDTH / 2 + p.width / 2;
+        state.camera.x = Math.max(0, Math.min(WORLD_WIDTH - CANVAS_WIDTH, targetCamX));
+
+        // 9. Atualização das partículas visuais
+        for (let i = state.particles.length - 1; i >= 0; i--) {
+          const pt = state.particles[i];
+          pt.x += pt.vx;
+          pt.y += pt.vy;
+          pt.life -= pt.decay;
+          if (pt.life <= 0) {
+            state.particles.splice(i, 1);
+          }
+        }
+
+        // Temporizador do banner
+        if (state.bannerTimer > 0) {
+          state.bannerTimer--;
+        }
+      }
+
+
+      /* ==================== 4. RENDER ==================== */
+
+      /**
+       * Desenho completo do quadro utilizando HTML5 Canvas 2D
+       */
+      function renderizar() {
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        const camX = state.camera.x;
+
+        // Zoom de 10% na tela do jogo (cenários e mundo) sem alterar o HUD
+        ctx.save();
+        ctx.translate(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.scale(1.10, 1.10);
+        ctx.translate(-CANVAS_WIDTH / 2, -CANVAS_HEIGHT / 2);
+
+        // --- 1. CAMADA DE PARALLAX 1: bg_sky.png a 0% da velocidade da câmera ---
+        const skyImg = assets.bg_sky;
+        if (skyImg && skyImg.loaded) {
+          // 0% de velocidade = estático em relação à câmera
+          ctx.drawImage(skyImg, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        } else {
+          // Fallback: Retângulo colorido roxo escuro com gradiente noturno e lua
+          const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+          skyGrad.addColorStop(0, '#0c0617');
+          skyGrad.addColorStop(1, '#231138');
+          ctx.fillStyle = skyGrad;
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          // Lua cheia de cemitério
+          ctx.fillStyle = '#f5f5f7';
+          ctx.beginPath();
+          ctx.arc(CANVAS_WIDTH - 140, 90, 42, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // --- 2. CAMADA DE PARALLAX 2: bg_trees.png a 15% da velocidade da câmera ---
+        const treesImg = assets.bg_trees;
+        const speedTrees = 0.15;
+        const treesOffset = (camX * speedTrees) % CANVAS_WIDTH;
+
+        if (treesImg && treesImg.loaded) {
+          // Desenha repetindo horizontalmente para cobrir a tela inteira com a rolagem
+          ctx.drawImage(treesImg, -treesOffset, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.drawImage(treesImg, -treesOffset + CANVAS_WIDTH, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        } else {
+          // Fallback: Silhuetas de árvores em tom roxo-escuro
+          ctx.fillStyle = '#170c26';
+          for (let tx = -treesOffset; tx < CANVAS_WIDTH + 200; tx += 200) {
+            ctx.fillRect(tx + 60, 200, 16, 260);
+            ctx.beginPath();
+            ctx.arc(tx + 68, 200, 48, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // --- 3. CAMADA DE PARALLAX 3: bg_graves.png a 40% da velocidade da câmera ---
+        const gravesImg = assets.bg_graves;
+        const speedGraves = 0.40;
+        const gravesOffset = (camX * speedGraves) % CANVAS_WIDTH;
+
+        if (gravesImg && gravesImg.loaded) {
+          ctx.drawImage(gravesImg, -gravesOffset, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.drawImage(gravesImg, -gravesOffset + CANVAS_WIDTH, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        } else {
+          // Fallback: Silhuetas de lápides e cruzes em roxo intermediário
+          ctx.fillStyle = '#26123a';
+          for (let gx = -gravesOffset; gx < CANVAS_WIDTH + 150; gx += 130) {
+            // Lápide arredondada
+            ctx.fillRect(gx + 20, 370, 24, 60);
+            ctx.beginPath();
+            ctx.arc(gx + 32, 370, 12, Math.PI, 0);
+            ctx.fill();
+            // Cruz
+            ctx.fillRect(gx + 80, 360, 6, 50);
+            ctx.fillRect(gx + 72, 375, 22, 6);
+          }
+        }
+
+        // --- 4. OBJETOS DO MUNDO (COM TRANSLATION DA CÂMERA) ---
+        ctx.save();
+        ctx.translate(-camX, 0);
+
+        // A. O chão é montado repetindo tile_ground.png
+        const groundTile = assets.tile_ground;
+        const tileSize = 64;
+
+        for (const plat of platforms) {
+          if (groundTile && groundTile.loaded) {
+            // Repete o tile_ground.png horizontalmente e verticalmente pela plataforma
+            const cols = Math.ceil(plat.width / tileSize);
+            const rows = Math.ceil(plat.height / tileSize);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(plat.x, plat.y, plat.width, plat.height);
+            ctx.clip(); // Limita o desenho à caixa exata da plataforma
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                ctx.drawImage(groundTile, plat.x + c * tileSize, plat.y + r * tileSize, tileSize, tileSize);
+              }
+            }
+            ctx.restore();
+          } else {
+            // Fallback: Retângulo colorido terroso/verde cemitério
+            ctx.fillStyle = plat.isGround ? '#28173b' : '#392254';
+            ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+            // Borda superior verde musgo
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(plat.x, plat.y, plat.width, 5);
+          }
+        }
+
+        // B. Renderização dos 15 Ossos
+        const boneImg = assets.bone;
+        for (const bone of state.bones) {
+          if (!bone.collected) {
+            const bobY = bone.y + Math.sin(Date.now() * 0.005 + bone.bobOffset) * 4;
+            
+            // Halo de brilho verde esmeralda no chão/ar
+            ctx.save();
+            ctx.shadowColor = '#22c55e';
+            ctx.shadowBlur = 10;
+            if (boneImg && boneImg.loaded) {
+              ctx.drawImage(boneImg, bone.x, bobY, bone.width, bone.height);
+            } else {
+              // Fallback: Retângulo colorido off-white / amarelo-marfim conforme especificação
+              ctx.fillStyle = '#f5f5f7';
+              ctx.fillRect(bone.x, bobY, bone.width, bone.height);
+              ctx.strokeStyle = '#22c55e';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(bone.x, bobY, bone.width, bone.height);
+            }
+            ctx.restore();
+          }
+        }
+
+        // C. Renderização dos 3 Inimigos (Fantasmas)
+        const enemyImg = assets.enemy;
+        for (const enemy of state.enemies) {
+          const ghostY = enemy.y + Math.sin(enemy.floatPhase) * 6;
+          
+          ctx.save();
+          // Halo espectral roxo ao redor do fantasma
+          ctx.shadowColor = '#a855f7';
+          ctx.shadowBlur = 12;
+
+          if (enemyImg && enemyImg.loaded) {
+            ctx.save();
+            // Se estiver indo para a esquerda, espelha horizontalmente o sprite
+            if (enemy.vx < 0) {
+              ctx.translate(enemy.x + enemy.width, ghostY);
+              ctx.scale(-1, 1);
+              ctx.drawImage(enemyImg, 0, 0, enemy.width, enemy.height);
+            } else {
+              ctx.drawImage(enemyImg, enemy.x, ghostY, enemy.width, enemy.height);
+            }
+            ctx.restore();
+          } else {
+            // Fallback: Retângulo colorido roxo espectral conforme especificação
+            ctx.fillStyle = '#9333ea';
+            ctx.fillRect(enemy.x, ghostY, enemy.width, enemy.height);
+            // Olhos brilhantes no retângulo
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(enemy.x + (enemy.vx > 0 ? 20 : 6), ghostY + 10, 6, 6);
+          }
+          ctx.restore();
+        }
+
+        // D. Renderização do Personagem Bones (Com Evolução e Escala)
+        const p = state.player;
+        const isBlinking = (p.invulnerableTimer > 0 && Math.floor(p.invulnerableTimer / 5) % 2 === 0);
+
+        if (!isBlinking) {
+          ctx.save();
+
+          // Seleção da sprite conforme o estado do jogador:
+          // Pulo: bones_jump.png | Andando: bones_walk.png (4 quadros) | Parado: bones_idle.png
+          let currentImg = assets.bones_idle;
+          if (p.isJumping || !p.isGrounded) {
+            currentImg = assets.bones_jump;
+          } else if (p.vx !== 0) {
+            currentImg = assets.bones_walk;
+          }
+
+          const drawW = p.width;
+          const drawH = p.height;
+
+          if (currentImg && currentImg.loaded) {
+            ctx.save();
+            if (p.facing === 'left') {
+              ctx.translate(p.x + drawW, p.y);
+              ctx.scale(-1, 1);
+              if (currentImg === assets.bones_walk) {
+                // bones_walk.png tem 4 quadros de 32px de largura no original (total 128px)
+                const frameW = currentImg.naturalWidth / 4 || 32;
+                const frameH = currentImg.naturalHeight || 48;
+                ctx.drawImage(
+                  currentImg,
+                  p.animFrame * frameW, 0, frameW, frameH,
+                  0, 0, drawW, drawH
+                );
+              } else {
+                ctx.drawImage(currentImg, 0, 0, drawW, drawH);
+              }
+            } else {
+              if (currentImg === assets.bones_walk) {
+                const frameW = currentImg.naturalWidth / 4 || 32;
+                const frameH = currentImg.naturalHeight || 48;
+                ctx.drawImage(
+                  currentImg,
+                  p.animFrame * frameW, 0, frameW, frameH,
+                  p.x, p.y, drawW, drawH
+                );
+              } else {
+                ctx.drawImage(currentImg, p.x, p.y, drawW, drawH);
+              }
+            }
+            ctx.restore();
+          } else {
+            // Fallback: Retângulo colorido off-white / verde brilhante conforme especificação
+            ctx.fillStyle = '#f5f5f7';
+            ctx.fillRect(p.x, p.y, drawW, drawH);
+            // Olho verde brilhante característico de Bones
+            ctx.fillStyle = '#22c55e';
+            const eyeX = p.facing === 'right' ? p.x + drawW - 10 : p.x + 4;
+            ctx.fillRect(eyeX, p.y + 8, 6, 6);
+            ctx.strokeStyle = '#1a0f2e';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(p.x, p.y, drawW, drawH);
+          }
+
+          ctx.restore();
+        }
+
+        // E. Renderização de Partículas
+        for (const pt of state.particles) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, pt.life);
+          ctx.fillStyle = pt.color;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.restore(); // Fim da translação da câmera
+        ctx.restore(); // Fim do zoom de 10% da tela do jogo (HUD principal não é aumentada)
+
+
+        // --- 5. RENDERIZAÇÃO DA TELA INICIAL OU HUD ---
+        if (state.gameState === 'START') {
+          ctx.save();
+          // Overlay com tom roxo escuro translúcido da paleta
+          ctx.fillStyle = 'rgba(15, 7, 30, 0.90)';
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          ctx.textAlign = 'center';
+
+          // Caixa decorativa em roxo escuro com borda verde brilhante
+          const boxW = 720;
+          const boxH = 300;
+          const boxX = CANVAS_WIDTH / 2 - boxW / 2;
+          const boxY = CANVAS_HEIGHT / 2 - boxH / 2;
+
+          ctx.fillStyle = 'rgba(26, 15, 46, 0.95)';
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(boxX, boxY, boxW, boxH, 14);
+          ctx.fill();
+          ctx.stroke();
+
+          // TÍTULO: "BONES: O GUARDIÃO DO CEMITÉRIO"
+          ctx.font = '900 36px system-ui, -apple-system, sans-serif';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = '#1a0f2e'; // contorno escuro
+          ctx.fillStyle = '#f5f5f7';   // off-white
+          ctx.strokeText('BONES: O GUARDIÃO DO CEMITÉRIO', CANVAS_WIDTH / 2, boxY + 85);
+          ctx.fillText('BONES: O GUARDIÃO DO CEMITÉRIO', CANVAS_WIDTH / 2, boxY + 85);
+
+          // SUBTÍTULO: "Teclas para mover A/D, Espaço para pular"
+          ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#1a0f2e';
+          ctx.fillStyle = '#f5f5f7'; // off-white
+          ctx.strokeText('Teclas para mover A/D, Espaço para pular', CANVAS_WIDTH / 2, boxY + 150);
+          ctx.fillText('Teclas para mover A/D, Espaço para pular', CANVAS_WIDTH / 2, boxY + 150);
+
+          // BOTÃO / CHAMADA: "Pressione ENTER para iniciar"
+          const btnW = 390;
+          const btnH = 52;
+          const btnX = CANVAS_WIDTH / 2 - btnW / 2;
+          const btnY = boxY + 205;
+
+          ctx.fillStyle = '#22c55e'; // verde brilhante
+          ctx.beginPath();
+          ctx.roundRect(btnX, btnY, btnW, btnH, 10);
+          ctx.fill();
+
+          ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#000000'; // contorno preto
+          ctx.fillStyle = '#ffffff';   // texto branco
+          ctx.strokeText('Pressione ENTER para iniciar', CANVAS_WIDTH / 2, btnY + 33);
+          ctx.fillText('Pressione ENTER para iniciar', CANVAS_WIDTH / 2, btnY + 33);
+
+          ctx.restore();
+          return;
+        }
+
+        // --- 6. RENDERIZAÇÃO DO HUD (CENTRALIZADO NO MEIO DA TELA) ---
+        // Exigências da Interface:
+        // - Centralizado no meio da tela
+        // - "Evolução: X/3" à frente do progresso de ossos coletados
+        // - Vidas restantes (3 ícones)
+        // - Fonte sem serifa, texto branco com contorno escuro
+        // - Paleta da interface: off-white (#f5f5f7), roxo escuro (#1a0f2e), verde brilhante (#22c55e)
+
+        const hudW = 460;
+        const hudH = 76;
+        const hudX = (CANVAS_WIDTH - hudW) / 2; // Centralizado no meio da tela (x = 250)
+        const hudY = 16;
+
+        // Caixa de fundo translúcida do HUD em roxo escuro centralizada
+        ctx.save();
+        ctx.fillStyle = 'rgba(26, 15, 46, 0.88)';
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(hudX, hudY, hudW, hudH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // A. Vidas restantes (3 ícones de crânio centralizados no topo do HUD)
+        const lifeTotalW = (MAX_LIVES - 1) * 28 + 20; // 76px de largura total das 3 vidas
+        const lifeStartX = hudX + (hudW - lifeTotalW) / 2;
+        const lifeY = hudY + 8;
+
+        for (let i = 0; i < MAX_LIVES; i++) {
+          const iconX = lifeStartX + i * 28;
+          const isAlive = i < state.lives;
+
+          if (isAlive) {
+            // Crânio brilhante off-white com olhos verdes
+            ctx.fillStyle = '#f5f5f7';
+            ctx.beginPath();
+            ctx.arc(iconX + 10, lifeY + 7, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(iconX + 6, lifeY + 10, 8, 6);
+
+            // Olhos verdes brilhantes
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(iconX + 6, lifeY + 5, 2.5, 3.5);
+            ctx.fillRect(iconX + 11.5, lifeY + 5, 2.5, 3.5);
+          } else {
+            // Vida perdida (apagada em tom roxo escuro translúcido)
+            ctx.fillStyle = '#3f255c';
+            ctx.beginPath();
+            ctx.arc(iconX + 10, lifeY + 7, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(iconX + 6, lifeY + 10, 8, 6);
+          }
+        }
+
+        // B. Textos e Progresso
+        ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = '#1a0f2e'; // Contorno escuro
+
+        // "Evolução: X/3" posicionada à frente do progresso de ossos coletados
+        const evolText = `Evolução: ${state.evolutionLevel}/3`;
+        ctx.fillStyle = '#22c55e'; // Verde brilhante para destacar a evolução
+        ctx.strokeText(evolText, hudX + 22, hudY + 52);
+        ctx.fillText(evolText, hudX + 22, hudY + 52);
+
+        // Ícone de osso e contador "Ossos: X/15"
+        const bonesText = `Ossos: ${state.bonesCollected}/${TOTAL_BONES}`;
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(hudX + 154, hudY + 47, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#f5f5f7'; // Texto branco/off-white
+        ctx.strokeText(bonesText, hudX + 164, hudY + 52);
+        ctx.fillText(bonesText, hudX + 164, hudY + 52);
+
+        // Barra de progresso de ossos coletados
+        const barX = hudX + 282;
+        const barY = hudY + 40;
+        const barW = 156;
+        const barH = 14;
+
+        ctx.fillStyle = '#0f071e';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.strokeStyle = '#4a2d75';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(barX, barY, barW, barH);
+
+        const progress = Math.min(1.0, state.bonesCollected / TOTAL_BONES);
+        ctx.fillStyle = '#22c55e';
+        ctx.fillRect(barX + 2, barY + 2, (barW - 4) * progress, barH - 4);
+
+        ctx.restore();
+
+
+        // --- 7. BANNER DE DESTAQUE NA TELA (AVISO DE EVOLUÇÃO) ---
+        if (state.bannerTimer > 0 && state.bannerMessage) {
+          ctx.save();
+          ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#1a0f2e';
+          ctx.fillStyle = '#22c55e';
+          ctx.strokeText(state.bannerMessage, CANVAS_WIDTH / 2, 122);
+          ctx.fillText(state.bannerMessage, CANVAS_WIDTH / 2, 122);
+          ctx.restore();
+        }
+
+
+        // --- 7. TELA DE FIM DE JOGO ("Game Over") ---
+        if (state.gameState === 'GAMEOVER') {
+          ctx.save();
+          // Overlay escuro com toque roxo
+          ctx.fillStyle = 'rgba(15, 7, 30, 0.88)';
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          // Painel central
+          ctx.textAlign = 'center';
+
+          // Título com contorno
+          ctx.font = '900 48px system-ui, -apple-system, sans-serif';
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = '#1a0f2e';
+          ctx.fillStyle = '#ef4444'; // Vermelho fantasma
+          ctx.strokeText('FIM DE JOGO', CANVAS_WIDTH / 2, 180);
+          ctx.fillText('FIM DE JOGO', CANVAS_WIDTH / 2, 180);
+
+          ctx.font = '20px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#f5f5f7';
+          ctx.fillText('Os fantasmas do cemitério te alcançaram...', CANVAS_WIDTH / 2, 235);
+
+          // Resumo
+          ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#22c55e';
+          ctx.fillText(`Ossos Coletados: ${state.bonesCollected}/${TOTAL_BONES}  |  Evolução: ${state.evolutionLevel}/3`, CANVAS_WIDTH / 2, 280);
+
+          // Botão Reiniciar
+          const btnW = 260;
+          const btnH = 50;
+          const btnX = CANVAS_WIDTH / 2 - btnW / 2;
+          const btnY = 320;
+
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          ctx.roundRect(btnX, btnY, btnW, btnH, 10);
+          ctx.fill();
+
+          ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#1a0f2e';
+          ctx.fillText('REINICIAR FASE', CANVAS_WIDTH / 2, btnY + 32);
+
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#8c7fa3';
+          ctx.fillText('Pressione ESPAÇO ou clique no botão para tentar novamente', CANVAS_WIDTH / 2, 410);
+
+          ctx.restore();
+        }
+
+
+        // --- 8. TELA DE VITÓRIA (15 OSSOS COLETADOS) ---
+        if (state.gameState === 'VICTORY') {
+          ctx.save();
+          // Overlay glorioso com tons de verde e roxo
+          ctx.fillStyle = 'rgba(15, 7, 30, 0.88)';
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          ctx.textAlign = 'center';
+
+          ctx.font = '900 46px system-ui, -apple-system, sans-serif';
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = '#1a0f2e';
+          ctx.fillStyle = '#22c55e'; // Verde brilhante da vitória
+          ctx.strokeText('VITÓRIA DO GUARDIÃO!', CANVAS_WIDTH / 2, 170);
+          ctx.fillText('VITÓRIA DO GUARDIÃO!', CANVAS_WIDTH / 2, 170);
+
+          ctx.font = '20px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#f5f5f7';
+          ctx.fillText('Todos os 15 ossos foram recuperados e o cemitério está em paz!', CANVAS_WIDTH / 2, 225);
+
+          ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#39ff14';
+          ctx.fillText('EVOLUÇÃO MÁXIMA ATINGIDA: 3/3', CANVAS_WIDTH / 2, 270);
+
+          // Botão Jogar Novamente
+          const btnW = 280;
+          const btnH = 50;
+          const btnX = CANVAS_WIDTH / 2 - btnW / 2;
+          const btnY = 320;
+
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          ctx.roundRect(btnX, btnY, btnW, btnH, 10);
+          ctx.fill();
+
+          ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#1a0f2e';
+          ctx.fillText('JOGAR NOVAMENTE', CANVAS_WIDTH / 2, btnY + 32);
+
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#8c7fa3';
+          ctx.fillText('Pressione ESPAÇO ou clique no botão para recomeçar', CANVAS_WIDTH / 2, 410);
+
+          ctx.restore();
+        }
+      }
+
+
+      // --- GAME LOOP COM requestAnimationFrame ---
+      function loopJogo() {
+        atualizarRegras();
+        renderizar();
+        requestAnimationFrame(loopJogo);
+      }
+
+      // Inicia o ciclo do jogo após carregamento
+      window.addEventListener('load', () => {
+        requestAnimationFrame(loopJogo);
+      });
+      // Fallback imediato caso o evento já tenha disparado
+      requestAnimationFrame(loopJogo);
+    </script>
+  </body>
+</html>
